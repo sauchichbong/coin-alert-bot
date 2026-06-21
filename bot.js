@@ -7,7 +7,7 @@ const CHAT_ID = process.env.CHAT_ID;
 const STATE_FILE = "./state.json";
 const COOLDOWN = 8 * 60 * 60 * 1000; // 8h
 
-// ===== STATE =====
+// ================= STATE =================
 function loadState() {
   try {
     return JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
@@ -20,22 +20,22 @@ function saveState(state) {
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 }
 
-// ===== TELEGRAM =====
-async function sendTelegram(msg) {
+// ================= TELEGRAM =================
+async function sendTelegram(text) {
   await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
     chat_id: CHAT_ID,
-    text: msg,
+    text,
     parse_mode: "Markdown"
   });
 }
 
-// ===== COOLDOWN =====
-function canSend(last) {
-  if (!last) return true;
-  return Date.now() - last > COOLDOWN;
+// ================= COOLDOWN =================
+function canSend(lastTime) {
+  if (!lastTime) return true;
+  return Date.now() - lastTime > COOLDOWN;
 }
 
-// ===== OKX TICKER =====
+// ================= OKX TICKERS =================
 async function getTickers() {
   const res = await axios.get(
     "https://www.okx.com/api/v5/market/tickers?instType=SPOT"
@@ -43,7 +43,7 @@ async function getTickers() {
   return res.data.data || [];
 }
 
-// ===== CANDLE CHANGE =====
+// ================= CANDLE CHANGE =================
 async function getChange(instId, bar) {
   const res = await axios.get(
     `https://www.okx.com/api/v5/market/candles?instId=${instId}&bar=${bar}&limit=2`
@@ -55,49 +55,54 @@ async function getChange(instId, bar) {
   const open = Number(d[1][1]);
   const close = Number(d[0][4]);
 
+  if (open === 0) return null;
+
   return ((close - open) / open) * 100;
 }
 
-// ===== MAIN =====
+// ================= MAIN =================
 async function run() {
   const state = loadState();
 
-  // =========================
-  // STEP 1: TOP 5 24H GAINERS
-  // =========================
+  // 1. GET ALL TICKERS
   const tickers = await getTickers();
 
-  const sorted = tickers
-    .map(t => ({
-      instId: t.instId,
-      change24h: Number(t.sodUtc8) || 0
-    }))
+  // 2. FILTER USDT + CALCULATE 24H CHANGE
+  const usdtCoins = tickers
+    .filter(t => t.instId.endsWith("-USDT"))
+    .map(t => {
+      const last = Number(t.last);
+      const open24h = Number(t.open24h);
+
+      const change24h =
+        open24h > 0 ? ((last - open24h) / open24h) * 100 : 0;
+
+      return {
+        instId: t.instId,
+        change24h
+      };
+    })
     .sort((a, b) => b.change24h - a.change24h)
-    .slice(0, 5);
+    .slice(0, 5); // TOP 5
 
   let alerts = [];
 
-  for (const coin of sorted) {
+  // 3. LOOP TOP 5
+  for (const coin of usdtCoins) {
     const symbol = coin.instId;
 
     try {
-      // =========================
-      // STEP 2: 15m > 3%
-      // =========================
+      // STEP 1: 15m > 3%
       const chg15m = await getChange(symbol, "15m");
       if (chg15m === null || chg15m <= 3) continue;
 
-      // =========================
-      // STEP 3: 4h filter
-      // =========================
+      // STEP 2: 4h filter -5% to +5%
       const chg4h = await getChange(symbol, "4H");
       if (chg4h === null) continue;
 
       if (chg4h <= -5 || chg4h >= 5) continue;
 
-      // =========================
-      // COOLDOWN 8H
-      // =========================
+      // STEP 3: cooldown 8h
       if (!canSend(state[symbol])) continue;
 
       alerts.push({
@@ -115,14 +120,10 @@ async function run() {
 
   saveState(state);
 
-  // =========================
   // NO SIGNAL
-  // =========================
   if (alerts.length === 0) return;
 
-  // =========================
-  // SEND MESSAGE
-  // =========================
+  // SEND TELEGRAM
   let msg = `🚨 *OKX ALERT*\n\n`;
 
   for (const a of alerts) {
