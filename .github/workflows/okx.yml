@@ -5,9 +5,6 @@ on:
     - cron: "*/15 * * * *"
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -19,7 +16,7 @@ jobs:
         with:
           node-version: 20
 
-      - run: npm install
+      - run: npm install axios
 
       - run: node bot.js
         env:
@@ -33,4 +30,3 @@ jobs:
           git add state.json
           git commit -m "update state" || exit 0
           git push
-
