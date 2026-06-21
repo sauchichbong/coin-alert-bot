@@ -5,7 +5,7 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 
 const STATE_FILE = "./state.json";
-const COOLDOWN = 8 * 60 * 60 * 1000; // 8h
+const COOLDOWN = 8 * 60 * 60 * 1000;
 
 // ================= STATE =================
 function loadState() {
@@ -64,10 +64,9 @@ async function getChange(instId, bar) {
 async function run() {
   const state = loadState();
 
-  // 1. GET ALL TICKERS
   const tickers = await getTickers();
 
-  // 2. FILTER USDT + CALCULATE 24H CHANGE
+  // 🔥 CHANGE HERE: TOP 10 instead of TOP 5
   const usdtCoins = tickers
     .filter(t => t.instId.endsWith("-USDT"))
     .map(t => {
@@ -83,26 +82,25 @@ async function run() {
       };
     })
     .sort((a, b) => b.change24h - a.change24h)
-    .slice(0, 5); // TOP 5
+    .slice(0, 10); // 🔥 TOP 10
 
   let alerts = [];
 
-  // 3. LOOP TOP 5
   for (const coin of usdtCoins) {
     const symbol = coin.instId;
 
     try {
-      // STEP 1: 15m > 3%
+      // 15m > 3%
       const chg15m = await getChange(symbol, "15m");
       if (chg15m === null || chg15m <= 3) continue;
 
-      // STEP 2: 4h filter -5% to +5%
+      // 4h -5% to +5%
       const chg4h = await getChange(symbol, "4H");
       if (chg4h === null) continue;
 
       if (chg4h <= -5 || chg4h >= 5) continue;
 
-      // STEP 3: cooldown 8h
+      // cooldown 8h
       if (!canSend(state[symbol])) continue;
 
       alerts.push({
@@ -120,11 +118,9 @@ async function run() {
 
   saveState(state);
 
-  // NO SIGNAL
   if (alerts.length === 0) return;
 
-  // SEND TELEGRAM
-  let msg = `🚨 *OKX ALERT*\n\n`;
+  let msg = `🚨 *OKX ALERT (TOP 10 24H)*\n\n`;
 
   for (const a of alerts) {
     msg += `🪙 ${a.symbol}\n`;
