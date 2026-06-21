@@ -121,8 +121,7 @@ async function run() {
   saveState(state);
 
   // NO SIGNAL
-  await sendTelegram("✅ Test GitHub Actions -> Telegram thành công");
-return;
+  if (alerts.length === 0) return;
 
   // SEND TELEGRAM
   let msg = `🚨 *OKX ALERT*\n\n`;
